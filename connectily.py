@@ -2,11 +2,15 @@ from socket import *
 import sqlite3
 import struct
 from datetime import datetime
-from threading import Thread
-from _thread import start_new_thread
 
-date_format = "%Y-%m-%d %H:%M:%S"
 
+date_format = "%Y-%m-%d %H:%M:%S"           # Uhrzeit Format
+startdt_con = "68040b000000"                # STARTDT in hex
+stopdt_con = "680423000000"                 # STOPDT in hex
+testfr_con = "680483000000"                 # TESTFR in hex
+
+
+# Die Klasse dataReceiver stellt die Verbindung mit dem Server her, versendet und empfängt Statustelegramme und
 
 class dataReceiver:
 
@@ -19,7 +23,23 @@ class dataReceiver:
 
         sock = socket(AF_INET, SOCK_STREAM)
         sock.connect((self.HOST, self.SERVER_PORT))
+        sock.send(bytearray.fromhex(startdt_con))
+        print("STARTDT gesendet")
         self.APDU = sock.recv(self.BUFSIZE)
+        sock.send(bytearray.fromhex(stopdt_con))
+        TestFrtester = self.APDU.hex()
+        if int(TestFrtester[4:6], 16) == 67:
+            print("TESTFR act erhalten")
+            sock.send(bytearray.fromhex(testfr_con))
+            print("TESTFR con gesendet")
+        elif int(TestFrtester[4:6], 16) == 7:
+            print("STARTDT act erhalten")
+            sock.send(bytearray.fromhex(startdt_con))
+        elif int(TestFrtester[4:6], 16) == 19:
+            print("STOPDT act erhalten")
+            sock.send(bytearray.fromhex(stopdt_con))
+        else:
+            pass
 
     def transform(self):
 
@@ -28,6 +48,7 @@ class dataReceiver:
         # Startzeichen auslesen
         self.start_sign = self.APDUhex[0:2]
         # Kondition überprüfen, richtiges Startzeichen?
+
         if self.start_sign == '68':
             # Länge der APDU auslesen
             self.length_of_APDU = int(self.APDUhex[2:4], 16)
@@ -70,7 +91,6 @@ class dataReceiver:
                         (self.time_year_dec, self.time_mon_dec, self.time_day_dec,
                          self.time_hour_dec, self.time_min_dec, self.time_sec_dec)
                     self.datetime_obj = datetime.strptime(self.date_str, date_format)
-                    print(self.datetime_obj)
                 else:
                     pass
             else:
@@ -81,38 +101,33 @@ class dataReceiver:
     def get_values(self):
         value = (self.counter_number_dec, self.datetime_obj, self.meter_value_dec)
         return value
-        # print(self.values)
 
 
-def get_ip_adresses():
-    ip_list = []
-    liste = [1, 2, 3, 4, 5]
-    for _ in liste:
-        Eingabe = input('ip adressen eingeben und mit enter bestätigen. für nicht verbundene Server bitte "0" eingeben')
-        ip_list.append(Eingabe)
-    ip_tuple = tuple(ip_list)
-    return ip_tuple
+def get_ip_adress():
+    Eingabe = input('Bitte IP Adresse des Servers eingeben: ')
+    return Eingabe
+
+
+def get_counter_number():
+    Eingabe = input('Bitte zugehörige Zählernummer eingeben: ')
+    return Eingabe
 
 
 # Server Ip Adressen
 class initialize_server:
-    def __init__(self, ip1, ip2, ip3, ip4, ip5, port):
-        self.ip1 = ip1
-        self.ip2 = ip2
-        self.ip3 = ip3
-        self.ip4 = ip4
-        self.ip5 = ip5
+    def __init__(self, ip, port):
+        self.ip = ip
         self.port = port
 
     def connection(self):
         try:
-            while self.ip1 != '0':
-                server1 = dataReceiver(self.ip1, self.port, 1024)
-                server1.connect()
-                server1.transform()
-                if server1.start_sign == '68':
-                    if server1.typeID == 36:
-                        values_1 = server1.get_values()
+            while self.ip != '0':
+                server = dataReceiver(self.ip, self.port, 1024)
+                server.connect()
+                server.transform()
+                if server.start_sign == '68':
+                    if server.typeID == 36:
+                        values_1 = server.get_values()
                         return values_1
                     else:
                         pass
@@ -121,81 +136,49 @@ class initialize_server:
         finally:
             pass
 
-        try:
-            while self.ip2 != '0':
-                server2 = dataReceiver(self.ip2, self.port, 1024)
-                server2.connect()
-                server2.transform()
-                if server2.start_sign == '68':
-                    if server2.typeID == 36:
-                        values_2 = server2.get_values()
-                        return values_2
-                    else:
-                        pass
-                else:
-                    pass
-        finally:
-            pass
 
-        try:
-            while self.ip3 != '0':
-                server3 = dataReceiver(self.ip3, self.port, 1024)
-                server3.connect()
-                server3.transform()
-        finally:
-            pass
-
-        try:
-            while self.ip4 != '0':
-                server4 = dataReceiver(self.ip4, self.port, 1024)
-                server4.connect()
-                server4.transform()
-        finally:
-            pass
-
-        try:
-            while self.ip5 != '0':
-                server5 = dataReceiver(self.ip5, self.port, 1024)
-                server5.connect()
-                server5.transform()
-        finally:
-            pass
-
-
-ip_adresses = get_ip_adresses()
-print(ip_adresses)
+ip_adress = get_ip_adress()
+counter_number = get_counter_number()
+print('Connected to: ', ip_adress)
 
 
 class dbWriter:
 
-    def __init__(self, counter_number, meter_reading_time, meter_reading):  # load
-        self.counter_number = counter_number
+    def __init__(self, adress, meter_reading_time, meter_reading):  # load
+        self.adress = adress
         self.meter_reading_time = meter_reading_time
         self.meter_reading = meter_reading
 
         # self.load = load
 
+# Objekt Adresse 1 für obis 180, 2 für obis 170, 3 für obis 280, 4 für obis 270
+
     def SQL_connect(self):
-        params = (self.meter_reading_time, self.counter_number, self.meter_reading, 1, 2, 3)  # , self.load
+        if self.adress == 1:
+            params = (self.meter_reading_time, counter_number, self.meter_reading, 0, 0, 0)
+        elif self.adress == 2:
+            params = (self.meter_reading_time, counter_number, 0, self.meter_reading, 0, 0)
+        elif self.adress == 3:
+            params = (self.meter_reading_time, counter_number, 0, 0, self.meter_reading,  0)
+        elif self.adress == 4:
+            params = (self.meter_reading_time, counter_number, 0, 0, 0, self.meter_reading)
+        else:
+            print('unknown type of data, please try again.')
         conn = sqlite3.connect('itp_R.db')
         c = conn.cursor()
-
         c.execute('CREATE TABLE IF NOT EXISTS zaehlwerte '
                   '(datum_zeit DATETIME NOT NULL, zaehler_id TEXT NOT NULL, obis_180 REAL DEFAULT 0.0, obis_170 REAL '
-                  'DEFAULT  0.0, obis_280 REAL DEFAULT  0.0, obis_270 REAL DEFAULT  0.0)')  # , load text
-        c.execute('INSERT INTO zaehlwerte VALUES (?,?,?,?,?,?)', params)  # ,?
+                  'DEFAULT  0.0, obis_280 REAL DEFAULT  0.0, obis_270 REAL DEFAULT  0.0)')
+        c.execute('INSERT INTO zaehlwerte VALUES (?,?,?,?,?,?)', params)
         conn.commit()
         c.close()
-
-
 
 
 try:
     while True:
 
-        start = initialize_server(ip_adresses[0], ip_adresses[1], ip_adresses[2], ip_adresses[3], ip_adresses[4], 2404)
+        start = initialize_server(ip_adress, 2404)
         values = start.connection()
-
         value_transfer = dbWriter(values[0], values[1], values[2])
         value_transfer.SQL_connect()
 
